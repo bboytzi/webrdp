@@ -1,0 +1,32 @@
+[Unit]
+Description=RDP web gateway (browser-based RDP client, IronRDP WASM + Node proxy)
+Documentation=file:/opt/webrdp/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=webrdp
+Group=webrdp
+WorkingDirectory=/opt/webrdp
+EnvironmentFile=/etc/webrdp.env
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+
+# 基础加固：这个进程只需要监听端口、读取自身目录、往外发起 TCP
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/webrdp
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

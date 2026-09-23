@@ -1,0 +1,34 @@
+2.0.0
+2026-09-23
+
+v2.0.0（2026-09-23）通用化 + 开源发布：
+- 代码与文档中不再包含任何账号、口令、内网地址、域名或本机路径
+- 配置统一到 .env（Windows / Linux / systemd 同一份格式）；
+  Windows 的 config.cmd 已废弃，启动脚本会提示
+- 默认白名单改为标准的 127.0.0.1:3389（原来是某台机器自定义的端口）
+- 新增 .env.example / LICENSE(MIT) / package.json 更名 webrdp
+- start.cmd 支持从 .env 读取 NODE_EXE 与 PORT，去掉环境专属路径
+
+v1.1.0（2026-09-23）新增：
+- 多台被控机：RDP_TARGETS 配置目标清单（标签=主机:端口），前端变成下拉框
+- 目标清单同时就是拨号白名单 —— 单处真相，不会再出现两处配置不一致
+- 新增 GET /targets（受认证保护）；页面上只显示标签，不下发内网地址
+- Debian 部署包：deploy/debian/{install.sh, webrdp.service, webrdp.env.example}
+- 未配置目标清单时退回 v1.0.0 行为（手动输入地址 + RDP_ALLOWED_DESTS）
+
+v1.0.0（2026-09-23）首个确认可用的版本（本机局域网 + 浏览器实测通过）。
+
+包含：
+- IronRDP WASM 浏览器 RDP 客户端（NLA/CredSSP，无需改动目标机 RDP 设置）+ Node WebSocket 代理
+- 静态资源白名单：只提供 /、/style.css、/lib/*、/pkg/*，其余一律 404
+- 分辨率：11 档预设下拉 + 手动修改 + 适配窗口，尺寸记忆在浏览器（不记忆主机地址）
+- 主机地址不预填
+- 服务端登录认证，三层拦截（页面 / 静态资源 / WebSocket 握手）
+- 配置外置到 config.cmd（含口令，不在静态白名单内）
+- 启动脚本纯 ASCII + CRLF，自动探测 node，支持端口参数
+- 快照与回滚（snapshot.cmd + git 标签）
+
+已知限制：
+- Windows 客户端版只有一个交互式会话，浏览器连入会顶掉本机当前登录的桌面
+- 剪贴板同步需要 HTTPS（安全上下文）
+- 服务端会话存在内存里，进程重启后需要重新登录

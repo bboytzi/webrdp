@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>远程桌面</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="header">
+        <h1>远程桌面</h1>
+        <span id="ver" class="ver"></span>
+        <select id="target" title="目标主机" style="display:none"></select>
+        <input type="text" id="host" placeholder="主机:端口" value="" autocomplete="off" spellcheck="false">
+        <input type="text" id="username" placeholder="用户名" value="" autocomplete="off" spellcheck="false">
+        <input type="password" id="password" placeholder="密码" value="" autocomplete="new-password">
+        <span class="sep">分辨率</span>
+        <select id="res-preset" title="预设分辨率"></select>
+        <input type="number" id="res-w" class="res" min="200" max="8192" step="2" value="1280">
+        <span class="x">×</span>
+        <input type="number" id="res-h" class="res" min="200" max="8192" step="2" value="720">
+        <button id="connect-btn">Connect</button>
+        <button id="disconnect-btn" disabled>Disconnect</button>
+        <button id="fullscreen-btn" title="Toggle fullscreen">⛶</button>
+        <a id="logout-link" href="/logout" title="退出登录">退出</a>
+        <span id="status" class="status-disconnected">Disconnected</span>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="rdp-screen" width="1280" height="720" tabindex="0"></canvas>
+    </div>
+
+    <div id="file-transfer-panel">
+        <div class="ft-header">
+            <h3>📁 File Transfer</h3>
+            <div class="ft-actions">
+                <button class="ft-btn" id="upload-btn" disabled>Upload Files</button>
+                <button class="ft-btn primary" id="download-btn" disabled>Request Download</button>
+                <input type="file" id="file-input" multiple style="display: none;">
+            </div>
+        </div>
+        <div class="ft-drop-zone" id="drop-zone">
+            Drag & drop files here to upload to remote desktop
+        </div>
+        <div id="file-list"></div>
+    </div>
+
+    <div id="log-panel"></div>
+
+    <script type="module">
+        import init, {
+            setup,
+            SessionBuilder,
+            DesktopSize,
+            InputTransaction,
+            DeviceEvent,
+            Extension,
+            ClipboardData,
+        } from '../pkg/rdp_client.js';
+
+        import { createLogger } from './lib/logger.js';
+        import { createSessionManager } from './lib/session.js';
+
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log-panel');
+        const connectBtn = document.getElementById('connect-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const targetSelect = document.getElementById('target');
+        const hostInput = document.getElementById('host');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const resWInput = document.getElementById('res-w');
+        const resHInput = document.getElementById('res-h');
+        const resPresetEl = document.getElementById('res-preset');
+        const canvas = document.getElementById('rdp-screen');
+        const canvasContainer = document.getElementById('canvas-container');
+        const fileTransferPanel = document.getElementById('file-transfer-panel');
+        const uploadBtn = document.getElementById('upload-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const fileInput = document.getElementById('file-input');
+        const dropZone = document.getElementById('drop-zone');
+        const fileListEl = document.getElementById('file-list');
+
+        const { log, setStatus, formatError } = createLogger(logEl, statusEl);
+
+        const sessionManager = createSessionManager({
+            canvas, statusEl, connectBtn, disconnectBtn, fileTransferPanel,
+            uploadBtn, downloadBtn, fileInput, dropZone, fileListEl,
+            hostInput, usernameInput, passwordInput, resWInput, resHInput,
+            resolveDestination,
+            SessionBuilder, DesktopSize, Extension, DeviceEvent, InputTransaction, ClipboardData,
+            init, setup, log, setStatus, formatError
+        });
+
+        // 分辨率：预设下拉 + 保留手动修改（只记尺寸，不记主机地址）
+        const RES_KEY = 'webrdp.resolution';
+        const PRESETS = [
+            [1024, 768], [1280, 720], [1280, 800], [1366, 768], [1440, 900],
+            [1600, 900], [1680, 1050], [1920, 1080], [1920, 1200], [2560, 1440], [3840, 2160],
+        ];
+        const OPT_FIT = '__fit__';
+        const OPT_CUSTOM = '__custom__';
+
+        for (const [w, h] of PRESETS) {
+            resPresetEl.add(new Option(`${w} x ${h}`, `${w}x${h}`));
+        }
+        resPresetEl.add(new Option('适配窗口', OPT_FIT));
+        resPresetEl.add(new Option('自定义', OPT_CUSTOM));
+
+        function saveResolution() {
+            try {
+                localStorage.setItem(RES_KEY, JSON.stringify({ w: resWInput.value, h: resHInput.value }));
+            } catch (_) {}
+        }
+
+        function syncPreset() {
+            const w = parseInt(resWInput.value, 10);
+            const h = parseInt(resHInput.value, 10);
+            const hit = PRESETS.find(([pw, ph]) => pw === w && ph === h);
+            resPresetEl.value = hit ? `${w}x${h}` : OPT_CUSTOM;
+        }
+
+        function applyFit() {
+            const rect = canvasContainer.getBoundingClientRect();
+            const even = (n) => Math.max(200, Math.floor(n / 2) * 2);
+            resWInput.value = even(rect.width);
+            resHInput.value = even(rect.height);
+            syncPreset();
+            saveResolution();
+            log(`分辨率已按窗口设为 ${resWInput.value} x ${resHInput.value}（下次连接生效）`, 'info');
+        }
+
+        resPresetEl.addEventListener('change', () => {
+            const v = resPresetEl.value;
+            if (v === OPT_FIT) return applyFit();
+            if (v === OPT_CUSTOM) return;
+            const [w, h] = v.split('x');
+            resWInput.value = w;
+            resHInput.value = h;
+            saveResolution();
+        });
+
+        [resWInput, resHInput].forEach(el => {
+            el.addEventListener('input', () => {
+                syncPreset();
+                saveResolution();
+            });
+        });
+
+        try {
+            const saved = JSON.parse(localStorage.getItem(RES_KEY) || 'null');
+            if (saved && saved.w && saved.h) {
+                resWInput.value = saved.w;
+                resHInput.value = saved.h;
+            }
+        } catch (_) {}
+        syncPreset();
+
+        connectBtn.addEventListener('click', sessionManager.connect);
+        disconnectBtn.addEventListener('click', sessionManager.disconnect);
+
+        [hostInput, usernameInput, passwordInput, resWInput, resHInput].forEach(el => {
+            el.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !connectBtn.disabled) sessionManager.connect();
+            });
+        });
+
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                canvasContainer.requestFullscreen().catch(() => {});
+            } else {
+                document.exitFullscreen().catch(() => {});
+            }
+        });
+
+        // 连到哪台：服务端配置了 RDP_TARGETS 就走下拉框（列表即白名单，页面上只显示标签），
+        // 否则退回手动输入地址模式。两种模式共用同一个解析入口 resolveDestination()。
+        function resolveDestination() {
+            if (targetSelect.dataset.mode === 'list') return targetSelect.value || '';
+            return hostInput.value.trim();
+        }
+
+        fetch('/targets')
+            .then(r => (r.ok ? r.json() : []))
+            .then(list => {
+                if (!Array.isArray(list) || list.length === 0) {
+                    log('服务端未配置目标清单，使用手动输入主机地址', 'info');
+                    return;
+                }
+                for (const t of list) {
+                    const opt = new Option(t.label, t.dest);
+                    targetSelect.add(opt);
+                }
+                targetSelect.dataset.mode = 'list';
+                targetSelect.style.display = '';
+                hostInput.style.display = 'none';
+                log(`服务端配置了 ${list.length} 台目标主机，请从下拉框选择`, 'info');
+            })
+            .catch(() => {});
+
+        // 显示服务端版本（即"当前跑的是哪一份"），便于确认是否重启成功
+        fetch('/version')
+            .then(r => (r.ok ? r.text() : ''))
+            .then(v => {
+                if (!v) return;
+                document.getElementById('ver').textContent = 'v' + v;
+                log(`服务端版本 v${v}`, 'info');
+            })
+            .catch(() => {});
+
+        log('客户端就绪。填写主机地址后点 Connect。');
+        log('分辨率可从下拉框选预设，也可以直接改数字；尺寸会记住。', 'info');
+        log('提示：剪贴板同步需要 HTTPS（公网访问务必用 HTTPS）。', 'info');
+    </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+node_modules/
+
+# 本地配置与口令：绝不进入代码仓库
+.env
+config.cmd
+
+# 快照与日志
+snapshots/
+*.log
+_*.log
+
+# 可选：项目内置的独立 node.exe（离线部署用）
+runtime/
