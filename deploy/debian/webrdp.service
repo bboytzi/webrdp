@@ -10,6 +10,7 @@ User=webrdp
 Group=webrdp
 WorkingDirectory=/opt/webrdp
 EnvironmentFile=/etc/webrdp.env
+# 注意：install.sh 会按实际解析到的 node 路径重写这一行
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=3

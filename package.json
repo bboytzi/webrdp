@@ -1,6 +1,6 @@
 {
     "name": "webrdp",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "description": "Clientless RDP web gateway: open Windows desktops in a browser, with server-side login and a target allowlist. No plugin, no client install, no third-party cloud.",
     "license": "MIT",
     "type": "commonjs",

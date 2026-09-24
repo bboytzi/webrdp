@@ -1,5 +1,16 @@
-2.0.0
-2026-09-23
+2.0.1
+2026-09-24
+
+v2.0.1（2026-09-24）修复 Linux 部署脚本：
+- install.sh：显式创建同名用户组（`useradd --system` 在部分发行版不建组，
+  而单元里写了 `Group=webrdp`，会直接导致服务起不来）；再加 `groupadd` 兜底
+- install.sh：同步代码时**排除 `.env` 与 `config.cmd`** —— 否则会把源机器的
+  登录口令和内网目标一起复制到服务器
+- install.sh：把实际解析到的 node 路径写进 systemd 单元，不再假设 `node` 在 `/usr/bin`
+- install.sh：就地部署（源目录恰好是 `/opt/webrdp`）时跳过复制；
+  没有 systemctl 的环境给出前台运行方式
+- install.sh：收尾提示补充「本机防火墙放行」与「npm 国内镜像」
+- webrdp.service：注明 ExecStart 会被 install.sh 重写
 
 v2.0.0（2026-09-23）通用化 + 开源发布：
 - 代码与文档中不再包含任何账号、口令、内网地址、域名或本机路径
