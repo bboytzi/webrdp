@@ -31,6 +31,12 @@
     v3  Section 4 now decodes the RCM\GracePeriod blob as a FILETIME. That read
         needs no WMI provider at all, so it still yields the grace-period
         deadline on hosts where GetGracePeriodDays cannot be called.
+    v4  Section 4 no longer claims the RCM\GracePeriod value is a FILETIME. On a
+        real RD Session Host it turned out to be a 230-byte DPAPI-encrypted blob
+        (version 1 + provider GUID d08c9ddf-0115-11d1-8c7a-00c04fc297eb) and the
+        old code threw while decoding it. Now only an exactly 8-byte value is
+        decoded; anything else is reported as undecodable and the hex dump is
+        truncated to the first 16 bytes. Section 2 remains authoritative.
 #>
 
 # Overridable only so the decode routine can be exercised against a known value.
@@ -114,13 +120,25 @@ function Show-GracePeriodBlob {
         $v = $null
         try { $v = $item.GetValue($n) } catch { }
         if ($v -is [byte[]]) {
-            $hex = (($v | ForEach-Object { $_.ToString('x2') }) -join ' ')
-            Write-Host ('  ' + $n + ' = ' + $hex + '   (' + $v.Length + ' bytes)')
-            if ($v.Length -ge 8) {
+            $hex = (($v[0..([Math]::Min(15, $v.Length - 1))] | ForEach-Object { $_.ToString('x2') }) -join ' ')
+            $suffix = '  (' + $v.Length + ' bytes)'
+            if ($v.Length -ne 8) { $suffix = $suffix + '  full value not shown' }
+            Write-Host ('  ' + $n + $suffix)
+            if ($v.Length -ne 8) {
+                Write-Host ('    first bytes: ' + $hex)
+                if ($v.Length -gt 12 -and $v[0] -eq 1 -and $v[1] -eq 0 -and $v[2] -eq 0 -and $v[3] -eq 0) {
+                    Write-Host '    this is a DPAPI-encrypted blob (version 1 + provider GUID), it cannot be'
+                    Write-Host '    decoded offline - section 2 GracePeriodDaysLeft is the real answer.'
+                } else {
+                    Write-Host '    not an 8-byte FILETIME - no deadline can be derived from it.'
+                }
+            }
+            if ($v.Length -eq 8) {
                 try {
                     $lo = [uint64]$v[0] + ([uint64]$v[1] * 256) + ([uint64]$v[2] * 65536) + ([uint64]$v[3] * 16777216)
                     $hi = [uint64]$v[4] + ([uint64]$v[5] * 256) + ([uint64]$v[6] * 65536) + ([uint64]$v[7] * 16777216)
                     $ft = $hi * 4294967296 + $lo
+                    if ($ft -lt 1 -or $ft -gt 2650467743999999999) { throw 'value is outside the FILETIME range (0001-01-01 .. 9999-12-31)' }
                     $dt = [DateTime]::FromFileTime([int64]$ft)
                     if ($dt.Year -ge 2000 -and $dt.Year -le 2100) {
                         $left = [int][Math]::Floor(($dt - (Get-Date)).TotalDays)
@@ -243,7 +261,7 @@ try {
     Write-Host '  RCM\Licensing Core key absent'
 }
 
-Section '4. Grace-period deadline (registry blob, no WMI needed)'
+Section '4. Grace-period registry blob (best effort, needs no WMI provider)'
 Show-GracePeriodBlob $GraceKey
 Write-Host '  Interpretation: a past date means the 120-day grace period is over and'
 Write-Host '  this host will refuse new clients that hold no license of their own.'
